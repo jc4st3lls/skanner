@@ -35,12 +35,17 @@ pub fn resolvenameinfo(ip_address: &str) -> Result<String, String> {
     let (sockaddr_storage, sockaddr_len): (Box<sockaddr>, u32) = match ip {
         IpAddr::V4(ipv4) => {
             let sockaddr_in = sockaddr_in {
+                #[cfg(target_os = "macos")]
                 sin_family: AF_INET as u8,
+                #[cfg(target_os = "linux")]
+                sin_family: AF_INET as u16,
                 sin_port: 0,
                 sin_addr: libc::in_addr {
                     s_addr: u32::from(ipv4).to_be(),
                 },
-                sin_zero: [0; 8],sin_len:0
+                sin_zero: [0; 8],
+                #[cfg(target_os = "macos")]
+                sin_len:0
             };
             (Box::new(unsafe { std::mem::transmute(sockaddr_in) }), std::mem::size_of::<sockaddr_in>() as u32)
         },

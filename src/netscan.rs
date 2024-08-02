@@ -51,10 +51,14 @@ pub fn ping(destination_ip: Ipv4Addr) -> Result<String, String> {
 
     // Prepare destination address structure
     let mut dest_addr = sockaddr_in {
+        #[cfg(target_os = "macos")]
         sin_family: AF_INET as u8,
+        #[cfg(target_os = "linux")]
+        sin_family: AF_INET as u16,
         sin_port: 0,
         sin_addr: ipv4_to_in_addr(destination_ip),
         sin_zero: [0; 8],
+        #[cfg(target_os = "macos")]
         sin_len: 0,
     };
 
@@ -120,7 +124,10 @@ pub fn is_port_open(destination_ip: Ipv4Addr, port: u16) -> Result<bool, String>
         setsockopt(
             sock,
             libc::SOL_SOCKET,
+            #[cfg(target_os = "macos")]
             libc::SO_NOSIGPIPE,
+            #[cfg(target_os = "linux")]
+            libc::MSG_NOSIGNAL,
             optvalue as *const i32 as *const libc::c_void,
             std::mem::size_of_val(&optvalue) as libc::socklen_t,
         );
@@ -142,10 +149,14 @@ pub fn is_port_open(destination_ip: Ipv4Addr, port: u16) -> Result<bool, String>
 
     // Set up the server address structure
     let dest_addr: sockaddr_in = sockaddr_in {
+        #[cfg(target_os = "macos")]
         sin_family: AF_INET as u8,
+        #[cfg(target_os = "linux")]
+        sin_family: AF_INET as u16,
         sin_port: port.to_be(), // Convert to big-endian
         sin_addr: ipv4_to_in_addr(destination_ip),
         sin_zero: [0; 8],
+        #[cfg(target_os = "macos")]
         sin_len: 0,
     };
     unsafe {
@@ -158,9 +169,10 @@ pub fn is_port_open(destination_ip: Ipv4Addr, port: u16) -> Result<bool, String>
         
         if result == -1 {
             // Seguim
-
+            #[cfg(target_os = "macos")]
             let err = *libc::__error() ;
-
+            #[cfg(target_os = "linux")]
+            let err = i32::from(*libc::dlerror()) ;
             if err == EINPROGRESS {
                 //Continuem
                 
@@ -192,7 +204,10 @@ fn wait_for_connection(fd: i32, millisecons: i32) -> Result<bool, String> {
     let timeout = millisecons;
     let ret = unsafe { poll(fds.as_mut_ptr(), fds.len() as nfds_t, timeout) };
     if ret == -1 {
+        #[cfg(target_os = "macos")]
         return Err(unsafe { *libc::__error() }.to_string());
+        #[cfg(target_os = "linux")]
+        return Err(unsafe { *libc::dlerror() }.to_string());
     } else if ret == 0 {
         return Err("Connection timed out".to_string());
     }
@@ -212,10 +227,16 @@ fn wait_for_connection(fd: i32, millisecons: i32) -> Result<bool, String> {
             )
         };
         if ret == -1 {
+            #[cfg(target_os = "macos")]
             return Err(unsafe { *libc::__error() }.to_string());
+            #[cfg(target_os = "linux")]
+            return Err(unsafe { *libc::dlerror() }.to_string());
         }
         if error != 0 {
+            #[cfg(target_os = "macos")]
             return Err(unsafe { *libc::__error() }.to_string());
+            #[cfg(target_os = "linux")]
+            return Err(unsafe { *libc::dlerror() }.to_string());
         }
     } else {
         return Err("Poll indicated an unexpected event".to_string());
