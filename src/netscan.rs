@@ -172,7 +172,8 @@ pub fn is_port_open(destination_ip: Ipv4Addr, port: u16) -> Result<bool, String>
             #[cfg(target_os = "macos")]
             let err = *libc::__error() ;
             #[cfg(target_os = "linux")]
-            let err = i32::from(*libc::dlerror()) ;
+
+            let err = *libc::__errno_location() ;
             if err == EINPROGRESS {
                 //Continuem
                 
@@ -207,7 +208,7 @@ fn wait_for_connection(fd: i32, millisecons: i32) -> Result<bool, String> {
         #[cfg(target_os = "macos")]
         return Err(unsafe { *libc::__error() }.to_string());
         #[cfg(target_os = "linux")]
-        return Err(unsafe { *libc::dlerror() }.to_string());
+        return Err(unsafe { *libc::__errno_location() }.to_string());
     } else if ret == 0 {
         return Err("Connection timed out".to_string());
     }
@@ -230,13 +231,13 @@ fn wait_for_connection(fd: i32, millisecons: i32) -> Result<bool, String> {
             #[cfg(target_os = "macos")]
             return Err(unsafe { *libc::__error() }.to_string());
             #[cfg(target_os = "linux")]
-            return Err(unsafe { *libc::dlerror() }.to_string());
+            return Err(unsafe { *libc::__errno_location()}.to_string());
         }
         if error != 0 {
             #[cfg(target_os = "macos")]
             return Err(unsafe { *libc::__error() }.to_string());
             #[cfg(target_os = "linux")]
-            return Err(unsafe { *libc::dlerror() }.to_string());
+            return Err(unsafe { *libc::__errno_location() }.to_string());
         }
     } else {
         return Err("Poll indicated an unexpected event".to_string());

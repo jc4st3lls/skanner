@@ -65,7 +65,12 @@ fn main() -> io::Result<()> {
 
        _ => {}
     } 
- 
+    /*let mut ips:Vec<String>=Vec::new();
+    ips.push("192.168.1.1".to_string());
+    let mut ports:Vec<u16>=Vec::new();
+    ports.push(443);
+    portsstatus(ips.clone(), Some(ports.clone()));*/
+
     let mut buffer:Vec<u8> = Vec::new();
     match io::stdin().read_to_end(&mut buffer){
         Ok(numbytes)=>{
