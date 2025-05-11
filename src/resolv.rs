@@ -30,7 +30,7 @@ pub fn resolvenames(ips:Vec<String>,_ports:Option<Vec<u16>>)->Option<Vec<String>
 
 }
 pub fn resolvenameinfo(ip_address: &str) -> Result<String, String> {
-    let ip: IpAddr = ip_address.parse().map_err(|_| "Dirección IP no válida")?;
+    let ip: IpAddr = ip_address.parse().map_err(|_| "Invalid IP")?;
     
     let (sockaddr_storage, sockaddr_len): (Box<sockaddr>, u32) = match ip {
         IpAddr::V4(ipv4) => {

@@ -29,7 +29,7 @@ pub fn sslscan(domain: String, port: u16) -> Result<String, String> {
         
         if ip.is_ipv4() {
             let ipv4 = convert_to_ipv4(ip.ip()).unwrap();
-            if netscan::is_port_open(ipv4, port).unwrap() == false {
+            if netscan::is_port_open(ipv4, port,None).unwrap() == false {
                 return Err(format!("Port {} is closed.", port));
             } else {
                 break;

@@ -1,259 +1,272 @@
-
 mod netscan;
-mod sslscan;
 mod resolv;
+mod sslscan;
 
-use std::io::{self, Read, Write};
-use std::env;
-use std::net::Ipv4Addr;
-use netscan::{is_port_open, ping,splitrange};
+use netscan::{is_port_open, ping};
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use resolv::resolvenames;
 use sslscan::sslscan;
-
-
+use std::env;
+use std::io::{self, Read, Write};
+use std::net::Ipv4Addr;
 
 fn main() -> io::Result<()> {
-    
     let args: Vec<String> = env::args().collect();
-    let argslen=args.len();
-    
-    let mut function:fn(ips:Vec<String>,ports:Option<Vec<u16>>)->Option<Vec<String>>=online;
+    let argslen = args.len();
 
-    let mut ports:Vec<u16>=Vec::new();
+    let mut function: fn(ips: Vec<String>, ports: Option<Vec<u16>>) -> Option<Vec<String>> = online_par;
+
+    let mut ports: Vec<u16> = Vec::new();
 
     match argslen {
-       1 => {
-              function=online ;
-            },
-       2 | 3 => {
-             let arg1=&args[1];
-             if arg1=="resolv"{
-                function=resolvenames;
-             }else{
-                let tmp=arg1.split(',');
-                for t in tmp.into_iter(){
-                   match t.parse::<u16>() {
-                       Ok(parsed_num) => {
-                               ports.push(parsed_num);
-                       }
-                       Err(_) => {
-                           println!("Failed to parse the string {} as a u32",t);
-                               
-                       }
-                   }
-               }
-   
-               if ports.is_empty(){
-                   println!("Failed to parse ports {}",arg1);
-   
-                   return Ok(());
-               }
-   
-               function=portsstatus;
-             }
+        1 => {
+            function = online_par;
+        }
+        2 | 3 => {
+            let arg1 = &args[1];
+            if arg1 == "resolv" {
+                function = resolvenames;
+            } else {
+                let tmp = arg1.split(',');
+                for t in tmp.into_iter() {
+                    match t.parse::<u16>() {
+                        Ok(parsed_num) => {
+                            ports.push(parsed_num);
+                        }
+                        Err(_) => {
+                            println!("Failed to parse the string {} as a u32", t);
+                        }
+                    }
+                }
 
-             if argslen==3 {
-                let arg2 = &args[2];
-                if arg2=="ssl"{
-                   function=sslprotocols;
-                }else{
-                    println!("Bad argument {}",arg2);
+                if ports.is_empty() {
+                    println!("Failed to parse ports {}", arg1);
+
                     return Ok(());
-                }                
+                }
+
+                function = portsstatus_par;
             }
-       },
 
-       _ => {}
-    } 
-  
-    let mut buffer:Vec<u8> = Vec::new();
-    match io::stdin().read_to_end(&mut buffer){
-        Ok(numbytes)=>{
-            if numbytes>0 {
-                let alltext = String::from_utf8(buffer);
-                if alltext.is_ok(){
-                   let alltext=alltext.unwrap();
-                   let lines:Vec<&str>=alltext.split("\n").collect();
-                   let mut ips:Vec<String>=Vec::new();
-
-                   for line in lines.iter(){
-                       let li=*line;
-                       let li = String::from(li) ;
-                       if li != "" {
-                          if li.contains("-"){
-                            match splitrange(&li.clone()){
-                                 Ok(vip)=>{
-                                    let _=vip.iter().for_each(|f| ips.push(f.clone()));
-                                 }
-                                 Err(_)=>{
-
-
-                                 }
-
-                            }
-
-                          }else{
-                            ips.push(li.clone());
-                          }
-                          
- 
-                       }
-                   }
-                   if !ips.is_empty(){
-                    
-                      if let Some(results)=function(ips.clone(),Some(ports)){
-                          // I escriure resultats a final stdout
-                          let stdout = io::stdout();
-                          let mut handle = stdout.lock();
-                          let results=results;
-                          for ip in results {
-                              let iip= ip + "\n";
-                              let _ = handle.write_all(iip.as_bytes());
-                          }
-
-                          let _ = handle.write_all(b"\n");   
-                      }
-
-                      
-                   }
-                }else{
-                    println!("Error parsing text!!!");
+            if argslen == 3 {
+                let arg2 = &args[2];
+                if arg2 == "ssl" {
+                    function = sslprotocols_par;
+                } else {
+                    println!("Bad argument {}", arg2);
+                    return Ok(());
                 }
             }
-            else
-            {
+        }
+
+        _ => {}
+    }
+
+    let mut buffer: Vec<u8> = Vec::new();
+    match io::stdin().read_to_end(&mut buffer) {
+        Ok(numbytes) => {
+            if numbytes > 0 {
+                let alltext = String::from_utf8(buffer);
+                if alltext.is_ok() {
+                    let alltext = alltext.unwrap();
+                    let lines: Vec<&str> = alltext.split("\n").collect();
+                    let mut ips: Vec<String> = Vec::new();
+
+                    for line in lines.iter() {
+                        let li = *line;
+                        let li = String::from(li);
+                        if li != "" {
+                            if li.contains("-") {
+                                match expand_ip_range(&li.clone()) {
+                                    Ok(vip) => {
+                                        let _ = vip.iter().for_each(|f| ips.push(f.clone()));
+                                    }
+                                    Err(_) => {}
+                                }
+                            } else {
+                                ips.push(li.clone());
+                            }
+                        }
+                    }
+                   
+                    if !ips.is_empty() {
+                        if let Some(results) = function(ips.clone(), Some(ports)) {
+                            // I escriure resultats a final stdout
+                            let mut stdout = io::stdout();
+                            let _=stdout.flush().unwrap();
+                            let mut handle = stdout.lock();
+                            let results = results;
+                            for ip in results {
+                                let iip = ip + "\n";
+                                let _ = handle.write_all(iip.as_bytes());
+                            }
+
+                            let _ = handle.write_all(b"\n");
+                        }
+                    }
+                } else {
+                    println!("Error parsing text!!!");
+                }
+            } else {
                 println!("No content to parse!!!");
             }
-
         }
-        Err(_)=>{
-
-           println!("Error!!!");
+        Err(_) => {
+            println!("Error!!!");
         }
-
     }
 
     Ok(())
 }
 
-
-
-fn online(ips:Vec<String>,_ports:Option<Vec<u16>>)->Option<Vec<String>>{
-
-    let mut results:Vec<String>=Vec::new();
-    
-    for destip in ips.iter(){
-        match destip.parse::<Ipv4Addr>(){
-            Ok(destination_ip)=>{
-                match ping(destination_ip){
-                    Ok(ip)=>{
-                        results.push(ip);
-                    }
-                    Err(_)=>{
-
-                    }
-                }
-            }Err(_)=>{
-               
-            }
-
-        }
+fn expand_ip_range(ip_range: &str) -> Result<Vec<String>, String> {
+    // Dividir la cadena en partes
+    let parts: Vec<&str> = ip_range.split('.').collect();
+    if parts.len() != 4 {
+        return Err("Formato de IP inválido".to_string());
     }
 
-    if !results.is_empty(){
+    // Procesar el último octeto que contiene el rango
+    let last_part = parts[3];
+    let range_parts: Vec<&str> = last_part.split('-').collect();
+    if range_parts.len() != 2 {
+        return Err("Formato de rango inválido".to_string());
+    }
+
+    // Parsear los números
+    let start: u8 = range_parts[0].parse().map_err(|_| "Inicio de rango inválido")?;
+    let end: u8 = range_parts[1].parse().map_err(|_| "Fin de rango inválido")?;
+
+    // Validar el rango
+    if start > end || end > 254 {
+        return Err("Rango de IP inválido (debe ser 1-254)".to_string());
+    }
+
+    // Construir la base de la IP (primeros 3 octetos)
+    let base = format!("{}.{}.{}", parts[0], parts[1], parts[2]);
+
+    // Generar todas las IPs en el rango
+    Ok((start..=end)
+        .map(|i| format!("{}.{}", base, i))
+        .collect())
+}
+
+
+fn online_par(ips: Vec<String>, _ports: Option<Vec<u16>>) -> Option<Vec<String>> {
+    let mut results: Vec<String> = Vec::new();
+    let on_processed=Box::new(move |msg : String| {
+        let mut stdout = io::stdout();
+        let _=stdout.flush().unwrap();
+        let mut handle = stdout.lock();
+        let _ =handle.write_all("\x1b[32m".as_bytes());
+        let _= handle.write_all(msg.as_bytes());
+        let _= handle.write("\x1b[0m\n".as_bytes());
+    });
+    // Procesamiento en paralelo
+    let valid_ips: Vec<_> = ips
+        .par_iter() // Iterador paralelo
+        .filter_map(|destip| {
+            // Parsear IP y hacer ping (en paralelo)
+            destip.parse::<Ipv4Addr>().ok().and_then(|ip| ping(ip,Some(on_processed.clone())).ok())
+        })
+        .collect();
+
+    results.extend(valid_ips);
+
+
+
+    if !results.is_empty() {
         return Some(results);
     }
 
     None
-
 }
-fn portsstatus(ips:Vec<String>,ports:Option<Vec<u16>>)->Option<Vec<String>>{
-    let mut results:Vec<String>=Vec::new();
-    //println!("portstatus");
-    match ports{
-        Some(ports)=>{
-             for destip in ips.iter(){
-                match destip.parse::<Ipv4Addr>(){
-                    Ok(destination_ip)=>{
 
-                        let mut openports:Vec<u16>=Vec::new();
-                        for port in ports.clone() {
-                            
-                            match is_port_open(destination_ip,port){
-                                Ok(isopen)=>{
-                                    if isopen { openports.push(port); }
-                                }
-                                Err(_)=>{
-            
-                                }
-                            }
-                        }
-                        if !openports.is_empty(){
-                            let mut ipports=destination_ip.to_string();
-                            
-                            let joined_ports: String =openports.iter()
-                            .map(|&x| x.to_string())
-                            .collect::<Vec<String>>()
-                            .join(",");
 
-                            ipports=format!("{},{}",ipports,joined_ports);
+fn portsstatus_par(ips: Vec<String>, ports: Option<Vec<u16>>) -> Option<Vec<String>> {
+    let on_processed=Box::new(move |msg : String| {
+        let mut stdout = io::stdout();
+        let _=stdout.flush().unwrap();
+        let mut handle = stdout.lock();
+        let _ =handle.write_all("\x1b[32m".as_bytes());
+        let _= handle.write_all(msg.as_bytes());
+        let _= handle.write("\x1b[0m\n".as_bytes());
 
-                            results.push(ipports.to_string());
-                        }
-                        
+    });
 
-                    }Err(_)=>{
-                       
+    let results: Vec<String> = ips
+        .par_iter() // Procesar IPs en paralelo
+        .filter_map(|destip| {
+            // Parsear IP (ignorar inválidas)
+            destip.parse::<Ipv4Addr>().ok().map(|ip| (ip, &ports))
+        })
+        .map(|(ip, ports)| {
+            // Escanear TODOS los puertos de esta IP (en paralelo)
+            let open_ports: Vec<u16> = ports.clone().unwrap()
+                .par_iter() // Procesar puertos en paralelo
+                .filter_map(|&port| match is_port_open(ip, port,Some(on_processed.clone())) {
+                    Ok(true) => Some(port), // Solo puertos abiertos
+                    Ok(false) | Err(_) => None, // Ignorar puertos cerrados o errores
+                }) // Verificar cada puerto
+                .collect();
+
+            // Formatear resultado si hay puertos abiertos
+            if !open_ports.is_empty() {
+                let ports_str = open_ports
+                    .iter()
+                    .map(|p| p.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",");
+                Some(format!("{},{}", ip, ports_str))
+            } else {
+                None
+            }
+        })
+        .filter_map(|x| x) // Filtrar IPs sin puertos abiertos
+        .collect();
+
+    //println!("Resultados: {:?}", results);
+    if !results.is_empty() {
+        return Some(results);
+    }
+
+    return None;
+}
+
+
+
+fn sslprotocols_par(ips: Vec<String>, ports: Option<Vec<u16>>) -> Option<Vec<String>> {
+
+    let results: Vec<String> = match ports {
+        Some(ports) => {
+            ips.par_iter() // Procesar IPs en paralelo
+                .filter_map(|destip| {
+                    let open_ports: Vec<String> = ports
+                        .par_iter() // Procesar puertos en paralelo
+                        .filter_map(|&port| {
+                            sslscan(destip.clone(), port)
+                                .ok()
+                                .filter(|protocols| !protocols.is_empty())
+                                .map(|protocols| format!("{},{}", port, protocols))
+                        })
+                        .collect();
+    
+                    if !open_ports.is_empty() {
+                        Some(format!("{},{}", destip, open_ports.join(",")))
+                    } else {
+                        None
                     }
-        
-                }
-            }
-        
-            if !results.is_empty(){
-                return Some(results);
-            }
-        
-            return None;
+                })
+                .collect()
         }
-        None => return None
+        None => Vec::new(),
     };
     
-}
-fn sslprotocols(ips:Vec<String>,ports:Option<Vec<u16>>)->Option<Vec<String>>{
-    let mut results:Vec<String>=Vec::new();
+    if !results.is_empty() {
+        Some(results)
+    } else {
+        None
+    }
 
-    match ports{
-        Some(ports)=>{
-             for destip in ips.iter(){
-                let mut endpprotos:Vec<String>=Vec::new();
-                for port in ports.clone() {
-                    match sslscan(destip.clone(),port){
-                        Ok(protocols)=>{
-                            if !protocols.is_empty() { 
-                                let tmp = format!("{},{}",port,protocols);
-                                endpprotos.push(tmp); 
-                            }
-                        }
-                        Err(_)=>{
-    
-                        }
-                    }
-                }
-                if !endpprotos.is_empty(){
-                    let mut ipprotos=destip.clone().to_string();                   
-                    let joined_protos: String =endpprotos.join(",");
-                    ipprotos=format!("{},{}",ipprotos,joined_protos);
-                    results.push(ipprotos.to_string());
-                }
 
-            }
-        
-            if !results.is_empty(){
-                return Some(results);
-            }
-        
-            return None;
-        }
-        None => return None
-    };
 }

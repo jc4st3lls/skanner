@@ -20,6 +20,11 @@ echo 172.16.1.1-254 | sudo cargo run -- 80,443
 echo 172.16.1.30-40 | sudo cargo run --resolv
 echo google.com | sudo cargo run -- 443 ssl
 
+cat << EOF | sudo cargo run -- 443 ssl
+google.com
+microsoft.com
+EOF
+
 </code>
 Com es pot veure, és poden fer diferents combinacions.
 Per compilar versió cal:

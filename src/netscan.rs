@@ -10,8 +10,8 @@ use libc::{
 use rand::random;
 const ICMP_ECHO_REQUEST: u8 = 8;
 const TIMEOUT_MILI_SECS_PING: i32 = 100;
-const TIMEOUT_MILI_SECS_SCAN: i32=1000;
-pub fn ping(destination_ip: Ipv4Addr) -> Result<String, String> {
+const TIMEOUT_MILI_SECS_SCAN: i32 = 150;
+pub fn ping(destination_ip: Ipv4Addr,on_processed: Option<Box<dyn Fn(String)>>) -> Result<String, String> {
     // Create a raw socket
     let sock = unsafe { socket(AF_INET, SOCK_RAW, 1) };
     if sock < 0 {
@@ -107,12 +107,14 @@ pub fn ping(destination_ip: Ipv4Addr) -> Result<String, String> {
         );
         return Err(err);
     }
-
+    if let Some(callback) = on_processed {
+        callback(destination_ip.to_string());
+    }
     Ok(destination_ip.to_string())
 }
 
-pub fn is_port_open(destination_ip: Ipv4Addr, port: u16) -> Result<bool, String> {
-   
+pub fn is_port_open(destination_ip: Ipv4Addr, port: u16,on_processed: Option<Box<dyn Fn(String)>>) -> Result<bool, String> {
+    //println!("{}:{}",destination_ip.to_string().red(),port.to_string().red());
     // Create a TCP socket
     let sock = unsafe { socket(AF_INET, SOCK_STREAM, 0) };
     if sock < 0 {
@@ -179,6 +181,10 @@ pub fn is_port_open(destination_ip: Ipv4Addr, port: u16) -> Result<bool, String>
                 
                 match wait_for_connection(sock, TIMEOUT_MILI_SECS_SCAN) {
                     Ok(_) => {
+                        if let Some(callback) = on_processed {
+                            let msg = format!("{}:{}", destination_ip.to_string(), port.to_string());
+                            callback(msg);
+                        }
                         return Ok(true);
                     }
                     Err(_err) => {
@@ -304,25 +310,3 @@ fn ipv4_to_in_addr(ipv4_addr: Ipv4Addr) -> in_addr {
     in_addr
 }
 
-
-pub fn splitrange(range:&str)->Result<Vec<String>,String>{
-
-    let mut parts = range.split('-');
-    let start_ip_str = parts.next().expect("Invalid range format");
-    let end_ip_suffix_str = parts.next().expect("Invalid range format");
-
-    let start_ip = start_ip_str.parse::<Ipv4Addr>().expect("Invalid start IP");
-    let mut end_ip_octets = start_ip.octets();
-    end_ip_octets[3] = end_ip_suffix_str.parse().expect("Invalid end IP suffix");
-
-    let mut result:Vec<String>=Vec::new();
-    let oct=start_ip.octets();
-    let ini=oct[3];
-    let end = end_ip_octets[3];
-    for i in ini..=end {
-        let ips=format!("{}.{}.{}.{}",oct[0],oct[1],oct[2],i);
-        result.push(ips);
-    }
-
-    Ok(result)
-}
