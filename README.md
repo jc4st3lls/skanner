@@ -8,6 +8,10 @@ Per desevolupar les diferents funcions, he utilitzat les llibreries:
 * openssl (https://docs.rs/openssl/latest/openssl/)
 * openssl-sys (https://crates.io/crates/openssl-sys)
 
+En linux cal instal.lar els paquest de desevolupament de openssl perque compili.
+<code>
+sudo apt-get install pkg-config libssl-dev
+</code>
 La idea en aquest projecte era programar operacions simples de xarxa a baix nivell, i interactuar amb openssl per poder interrogar un servidor i poder veure quins protocols suporta (amb això podem saber, quins servidors de la nostra xarxa encara suporten TLS1.0 o TLS1.1).
 
 Amb crates de tercers i la llibreria std::net, es podrien fer les operacions a més alt nivell, però no és el que buscava.
@@ -38,5 +42,8 @@ Exemple d'ús:
 echo 172.16.1.1-100 | sudo ./skanner | sudo ./skanner 443 | cut -d "," -f 1 | sudo ./skanner resolv | cut -d "," -f 2 | sudo ./skanner 443 ssl
 </code>
 Li passem un rang d'IP's, mira si estan actives. De les actives mira si tenen el port 443 obert. De les que tene el port obert, resolt el nom, i després mirar quins protocols ssl té disponibles. Si apareix algún amb protocols inferiosr a TLS1.2, són vulnerables.
+
+
+
 
 

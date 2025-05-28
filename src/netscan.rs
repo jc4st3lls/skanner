@@ -17,7 +17,7 @@ pub fn ping(destination_ip: Ipv4Addr,on_processed: Option<Box<dyn Fn(String)>>) 
     if sock < 0 {
         return Err("Failed to create socket".to_string());
     }
-
+    
     // Set TTL value
     let ttl: c_int = 64; 
     let result = unsafe {

@@ -1,14 +1,40 @@
-mod netscan;
+#[cfg(target_os = "windows")]
+mod netscan_win; 
+#[cfg(target_os = "windows")]
+mod resolv_win;
+#[cfg(target_os = "windows")]
+mod sslscan_win;
+#[cfg(not(target_os = "windows"))]
+mod netscan; 
+#[cfg(not(target_os = "windows"))]
 mod resolv;
+#[cfg(not(target_os = "windows"))]
 mod sslscan;
 
+
+
+#[cfg(not(target_os = "windows"))]
 use netscan::{is_port_open, ping};
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use netscan_win::ping_back;
+#[cfg(not(target_os = "windows"))]
 use resolv::resolvenames;
+#[cfg(not(target_os = "windows"))]
 use sslscan::sslscan;
+
+#[cfg(target_os = "windows")]
+use netscan_win::{is_port_open, ping};
+#[cfg(target_os = "windows")]
+use resolv_win::resolvenames;
+#[cfg(target_os = "windows")]
+use sslscan_win::sslscan;
+
+
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use std::collections::HashMap;
 use std::env;
 use std::io::{self, Read, Write};
 use std::net::Ipv4Addr;
+use std::sync::{Arc, Mutex};
 
 fn main() -> io::Result<()> {
     let args: Vec<String> = env::args().collect();
@@ -20,7 +46,7 @@ fn main() -> io::Result<()> {
 
     match argslen {
         1 => {
-            function = online_par;
+            function = online_par_back;
         }
         2 | 3 => {
             let arg1 = &args[1];
@@ -61,15 +87,43 @@ fn main() -> io::Result<()> {
 
         _ => {}
     }
+    /*let name = resolv_win::resolvenameinfo("192.168.10.30").unwrap();
+    println!("{name}");
+    let mut ips: Vec<String> = Vec::new();
+    ips.push("192.168.10.12".to_string());
+    ips.push("192.168.10.13".to_string());
+    ports.push(443);
+    function = online_par;
+    if let Some(results) = function(ips.clone(), Some(ports)) {
+         // I escriure resultats a final stdout
+        let mut stdout = io::stdout();
+        let _=stdout.flush().unwrap();
+        let mut handle = stdout.lock();
+        let results = results;
+        for ip in results {
+            let iip = ip + "\n";
+            let _ = handle.write_all(iip.as_bytes());
+        }
+
+        let _ = handle.write_all(b"\n");
+     }
+    
+
+    return Ok(()); */
 
     let mut buffer: Vec<u8> = Vec::new();
+
     match io::stdin().read_to_end(&mut buffer) {
         Ok(numbytes) => {
+    
             if numbytes > 0 {
                 let alltext = String::from_utf8(buffer);
                 if alltext.is_ok() {
                     let alltext = alltext.unwrap();
+                    #[cfg(not(target_os = "windows"))]
                     let lines: Vec<&str> = alltext.split("\n").collect();
+                    #[cfg(target_os = "windows")]
+                    let lines: Vec<&str> = alltext.split("\r\n").collect();
                     let mut ips: Vec<String> = Vec::new();
 
                     for line in lines.iter() {
@@ -151,8 +205,67 @@ fn expand_ip_range(ip_range: &str) -> Result<Vec<String>, String> {
         .collect())
 }
 
+fn online_par_back(ips: Vec<String>, _ports: Option<Vec<u16>>) -> Option<Vec<String>> {
+    #[cfg(windows)]
+    {
+        if netscan_win::wsastartup().is_err(){
+            println!("Error inicializing Winsock");
+            return Some(Vec::new());
+        }
+    }
+    
+    let on_processed:Option<Arc<Box<dyn Fn(String) + Send + Sync>>>=Some(Arc::new(Box::new(move |msg : String| {
+        let mut stdout = io::stdout();
+        let _=stdout.flush().unwrap();
+        let mut handle = stdout.lock();
+        let _ =handle.write_all("\x1b[32m".as_bytes());
+        let _= handle.write_all(msg.as_bytes());
+        let _= handle.write("\x1b[0m\n".as_bytes());
+    })));
+
+    let echoresponses:Arc<Mutex<HashMap<String,bool>>> = Arc::new(Mutex::new(HashMap::new()));
+
+    let valid_ips: Vec<_> = ips
+        .par_iter() // Iterador paralelo
+        .filter_map(|destip| {
+            // Parsear IP y hacer ping (en paralelo)
+             //destip.parse::<Ipv4Addr>().ok().and_then(|ip| ping(ip,None).ok())
+            let ip=destip.parse::<Ipv4Addr>().unwrap();
+            
+            match ping_back(ip, on_processed.clone(),echoresponses.clone()) {
+                Ok(_) => Some(ip.to_string()),
+                Err(_) => None,
+            }
+
+
+        })
+        .collect();
+        let echors=echoresponses.lock().unwrap();
+        let mut results: Vec<String> = echors.keys().map(|k| k.to_string()).collect();
+        results.sort();
+    
+    
+    #[cfg(windows)]
+    {
+       netscan_win::wsacleanup();
+    }
+
+
+    if !results.is_empty() {
+        return Some(results);
+    }
+
+    None
+}
 
 fn online_par(ips: Vec<String>, _ports: Option<Vec<u16>>) -> Option<Vec<String>> {
+    #[cfg(windows)]
+    {
+        if netscan_win::wsastartup().is_err(){
+            println!("Error inicializing Winsock");
+            return Some(Vec::new());
+        }
+    }
     let mut results: Vec<String> = Vec::new();
     let on_processed=Box::new(move |msg : String| {
         let mut stdout = io::stdout();
@@ -162,17 +275,34 @@ fn online_par(ips: Vec<String>, _ports: Option<Vec<u16>>) -> Option<Vec<String>>
         let _= handle.write_all(msg.as_bytes());
         let _= handle.write("\x1b[0m\n".as_bytes());
     });
+    /*let valid_ips: Vec<_> = ips
+    .iter()
+    .filter_map(|destip| destip.parse::<Ipv4Addr>().ok().and_then(|ip| ping(ip, Some(on_processed.clone())).ok()))
+    .collect();*/
     // Procesamiento en paralelo
     let valid_ips: Vec<_> = ips
         .par_iter() // Iterador paralelo
         .filter_map(|destip| {
             // Parsear IP y hacer ping (en paralelo)
-            destip.parse::<Ipv4Addr>().ok().and_then(|ip| ping(ip,Some(on_processed.clone())).ok())
+             //destip.parse::<Ipv4Addr>().ok().and_then(|ip| ping(ip,None).ok())
+            let ip=destip.parse::<Ipv4Addr>().unwrap();
+            
+            match ping(ip, None) {
+                Ok(_) => Some(ip.to_string()),
+                Err(_) => None,
+            }
+
+
         })
         .collect();
-
+    
+    
+    
     results.extend(valid_ips);
-
+    #[cfg(windows)]
+    {
+       netscan_win::wsacleanup();
+    }
 
 
     if !results.is_empty() {
