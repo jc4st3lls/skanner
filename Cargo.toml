@@ -13,9 +13,11 @@ features = ["Win32_Networking_WinSock", "Win32_Foundation"]
 [target."cfg(windows)".dependencies.native-tls]
 version = "0.2"
 
-[target.'cfg(target_os = "macos,linux")'.dependencies]
+[target."cfg(unix)".dependencies]
 libc = {version="0.2"}
 openssl = { version = "0.10" }
+
+
 
 
 [dependencies]

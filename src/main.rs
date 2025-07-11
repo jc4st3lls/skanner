@@ -211,6 +211,7 @@ fn online_par(ips: Vec<String>, _ports: Option<Vec<u16>>) -> Option<Vec<String>>
             println!("Error inicializing Winsock");
             return Some(Vec::new());
         }
+        let echoresponses:Arc<Mutex<HashMap<String,bool>>> = Arc::new(Mutex::new(HashMap::new()));
     }
     
     let on_processed:Option<Arc<Box<dyn Fn(String) + Send + Sync>>>=Some(Arc::new(Box::new(move |msg : String| {
@@ -220,28 +221,41 @@ fn online_par(ips: Vec<String>, _ports: Option<Vec<u16>>) -> Option<Vec<String>>
         let _ =handle.write_all("\x1b[32m".as_bytes());
         let _= handle.write_all(msg.as_bytes());
         let _= handle.write("\x1b[0m\n".as_bytes());
-    })));
+        })));
 
-    let echoresponses:Arc<Mutex<HashMap<String,bool>>> = Arc::new(Mutex::new(HashMap::new()));
+    
+ 
 
-    let _:Vec<String> = ips
+
+    let results:Vec<String> = ips
         .par_iter() // Iterador paralelo
         .filter_map(|destip| {
             // Parsear IP y hacer ping (en paralelo)
              //destip.parse::<Ipv4Addr>().ok().and_then(|ip| ping(ip,None).ok())
             let ip=destip.parse::<Ipv4Addr>().unwrap();
             
-            match ping(ip, on_processed.clone(),echoresponses.clone()) {
+            #[cfg(windows)]{
+                match ping(ip, on_processed.clone(),echoresponses.clone()) {
                 Ok(_) => Some(ip.to_string()),
                 Err(_) => None,
+                }
             }
-
+            
+           #[cfg(unix)]{
+                match ping(ip, on_processed.clone()) {
+                Ok(_) => Some(ip.to_string()),
+                Err(_) => None,
+                }
+            }
 
         })
         .collect();
-        let echors=echoresponses.lock().unwrap();
-        let mut results: Vec<String> = echors.keys().map(|k| k.to_string()).collect();
-        results.sort();
+         #[cfg(windows)]{
+           let echors=echoresponses.lock().unwrap();
+           let mut results: Vec<String> = echors.keys().map(|k| k.to_string()).collect();
+           results.sort();
+         }
+        
     
     
     #[cfg(windows)]

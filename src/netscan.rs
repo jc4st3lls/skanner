@@ -1,5 +1,5 @@
 
-use std::{io::Write, mem::{self}, time::Duration};
+use std::{io::Write, mem::{self}, sync::Arc, time::Duration};
 use std::net::Ipv4Addr;
 use libc::{
     c_int, c_void, connect, fcntl, in_addr, nfds_t, poll, pollfd, recv, send, setsockopt, sockaddr, sockaddr_in, socket, suseconds_t, time_t, timeval, AF_INET, EINPROGRESS, F_GETFL, F_SETFL, IPPROTO_IP, IP_TTL, O_NONBLOCK, POLLIN, POLLOUT, SOCK_RAW, SOCK_STREAM, SOL_SOCKET, SO_RCVTIMEO
@@ -11,7 +11,8 @@ use rand::random;
 const ICMP_ECHO_REQUEST: u8 = 8;
 const TIMEOUT_MILI_SECS_PING: i32 = 100;
 const TIMEOUT_MILI_SECS_SCAN: i32 = 150;
-pub fn ping(destination_ip: Ipv4Addr,on_processed: Option<Box<dyn Fn(String)>>) -> Result<String, String> {
+//Option<Box<dyn Fn(String)>>
+pub fn ping(destination_ip: Ipv4Addr,on_processed:Option<Arc<Box<dyn Fn(String) + Send + Sync>>> ) -> Result<String, String> {
     // Create a raw socket
     let sock = unsafe { socket(AF_INET, SOCK_RAW, 1) };
     if sock < 0 {
